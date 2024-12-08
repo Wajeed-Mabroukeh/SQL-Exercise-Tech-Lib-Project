@@ -1,0 +1,45 @@
+//Books Table:
+-- Index on BookID to speed up lookups for specific books
+CREATE NONCLUSTERED INDEX IDX_Books_BookID
+ON Books (BookID);
+
+-- Index on CurrentStatus to speed up queries filtering by status (e.g., 'Available' or 'Borrowed')
+CREATE NONCLUSTERED INDEX IDX_Books_CurrentStatus
+ON Books (CurrentStatus);
+
+-- Index on Title to speed up searching for books by title
+CREATE NONCLUSTERED INDEX IDX_Books_Title
+ON Books (Title);
+
+
+//Borrowers Table:
+-- Index on BorrowerID to speed up lookups for specific borrowers
+CREATE NONCLUSTERED INDEX IDX_Borrowers_BorrowerID
+ON Borrowers (BorrowerID);
+
+-- Index on FirstName and LastName to speed up searches by borrower name
+CREATE NONCLUSTERED INDEX IDX_Borrowers_Name
+ON Borrowers (FirstName, LastName);
+
+//Loans Table:
+-- Index on LoanID to speed up lookups for specific loans
+CREATE NONCLUSTERED INDEX IDX_Loans_LoanID
+ON Loans (LoanID);
+
+-- Index on BookID to speed up lookups for books associated with a loan
+CREATE NONCLUSTERED INDEX IDX_Loans_BookID
+ON Loans (BookID);
+
+-- Index on BorrowerID to speed up lookups for loans associated with a borrower
+CREATE NONCLUSTERED INDEX IDX_Loans_BorrowerID
+ON Loans (BorrowerID);
+
+-- Index on DateBorrowed to speed up queries filtering by loan date or due date
+CREATE NONCLUSTERED INDEX IDX_Loans_DateBorrowed
+ON Loans (DateBorrowed);
+
+//AuditLog Table:
+-- Index on ChangeDate to speed up querying logs within a specific date range
+CREATE NONCLUSTERED INDEX IDX_AuditLog_ChangeDate
+ON AuditLog (ChangeDate);
+

@@ -1,0 +1,347 @@
+///Books Table
+CREATE TABLE Books (
+    BookID INT PRIMARY KEY IDENTITY(1,1),
+    Title NVARCHAR(255) NOT NULL,
+    Author NVARCHAR(255),
+    ISBN NVARCHAR(13) UNIQUE,
+    PublishedDate DATE,
+    Genre NVARCHAR(100),
+    ShelfLocation NVARCHAR(50),
+    CurrentStatus NVARCHAR(20) CHECK (CurrentStatus IN ('Available', 'Borrowed')) DEFAULT 'Available'
+);
+
+ ///Borrowers Table
+CREATE TABLE Borrowers (
+    BorrowerID INT PRIMARY KEY IDENTITY(1,1),
+    FirstName NVARCHAR(100) NOT NULL,
+    LastName NVARCHAR(100),
+    Email NVARCHAR(255) UNIQUE NOT NULL,
+    DateOfBirth DATE,
+    MembershipDate DATE NOT NULL DEFAULT GETDATE()
+);
+
+///Loans Table
+CREATE TABLE Loans (
+    LoanID INT PRIMARY KEY IDENTITY(1,1),
+    BookID INT NOT NULL,
+    BorrowerID INT NOT NULL,
+    DateBorrowed DATE NOT NULL DEFAULT GETDATE(),
+    DueDate DATE NOT NULL,
+    DateReturned DATE NULL,
+    FOREIGN KEY (BookID) REFERENCES Books(BookID),
+    FOREIGN KEY (BorrowerID) REFERENCES Borrowers(BorrowerID)
+);
+
+///Seeding Books Table Example:
+
+INSERT INTO Books (Title, Author, ISBN, PublishedDate, Genre, ShelfLocation)
+VALUES
+('The Great Gatsby', 'F. Scott Fitzgerald', '9780743273565', '1925-04-10', 'Fiction', 'A1'),
+('1984', 'George Orwell', '9780451524935', '1949-06-08', 'Dystopian', 'A2');
+
+///Seeding Borrowers Table Example:
+
+INSERT INTO Borrowers (FirstName, LastName, Email, DateOfBirth)
+VALUES
+('John', 'Doe', 'john.doe@example.com', '1990-05-15'),
+('Jane', 'Smith', 'jane.smith@example.com', '1985-08-22');
+
+////Complex Queries and Procedures
+1.List of Borrowed Books
+SELECT 
+    b.Title, 
+    b.Author, 
+    l.DateBorrowed, 
+    l.DueDate, 
+    l.DateReturned
+FROM Loans l
+JOIN Books b ON l.BookID = b.BookID
+WHERE l.BorrowerID = @BorrowerID;
+
+2.Active Borrowers with CTEs
+WITH ActiveBorrowers AS (
+    SELECT BorrowerID, COUNT(*) AS LoanCount
+    FROM Loans
+    WHERE DateReturned IS NULL
+    GROUP BY BorrowerID
+    HAVING COUNT(*) >= 2
+)
+SELECT b.FirstName, b.LastName, LoanCount
+FROM ActiveBorrowers ab
+JOIN Borrowers b ON ab.BorrowerID = b.BorrowerID;
+
+3.Borrowing Frequency using Window Functions
+SELECT 
+    b.FirstName, 
+    b.LastName, 
+    COUNT(*) OVER (PARTITION BY l.BorrowerID) AS BorrowingFrequency
+FROM Borrowers b
+JOIN Loans l ON b.BorrowerID = l.BorrowerID;
+
+4.Popular Genre Analysis
+SELECT 
+    b.Genre, 
+    COUNT(*) AS BorrowCount
+FROM Loans l
+JOIN Books b ON l.BookID = b.BookID
+WHERE MONTH(l.DateBorrowed) = @Month
+GROUP BY b.Genre
+ORDER BY BorrowCount DESC;
+
+5.Stored Procedure - Add New Borrower
+CREATE PROCEDURE sp_AddNewBorrower
+    @FirstName NVARCHAR(100),
+    @LastName NVARCHAR(100),
+    @Email NVARCHAR(255),
+    @DateOfBirth DATE,
+    @MembershipDate DATE
+AS
+BEGIN
+    IF EXISTS (SELECT 1 FROM Borrowers WHERE Email = @Email)
+    BEGIN
+        PRINT 'Error: Email already exists';
+        RETURN;
+    END
+
+    INSERT INTO Borrowers (FirstName, LastName, Email, DateOfBirth, MembershipDate)
+    VALUES (@FirstName, @LastName, @Email, @DateOfBirth, @MembershipDate);
+
+    SELECT SCOPE_IDENTITY() AS NewBorrowerID;
+END;
+
+6.Database Function - Overdue Fees
+CREATE FUNCTION fn_CalculateOverdueFees (@LoanID INT)
+RETURNS DECIMAL(10,2)
+AS
+BEGIN
+    DECLARE @OverdueDays INT, @Fee DECIMAL(10,2);
+
+    SELECT @OverdueDays = DATEDIFF(DAY, DueDate, GETDATE())
+    FROM Loans
+    WHERE LoanID = @LoanID AND DateReturned IS NULL;
+
+    SET @Fee = CASE 
+        WHEN @OverdueDays <= 30 THEN @OverdueDays * 1.0
+        WHEN @OverdueDays > 30 THEN 30 * 1.0 + (@OverdueDays - 30) * 2.0
+        ELSE 0
+    END;
+
+    RETURN @Fee;
+END;
+
+7.Books by Borrowing Frequency:
+SELECT 
+    b.BookID, 
+    b.Title, 
+    dbo.fn_BookBorrowingFrequency(b.BookID) AS BorrowingFrequency
+FROM Books b
+ORDER BY BorrowingFrequency DESC;
+
+8.Overdue Analysis
+SELECT 
+    l.LoanID,
+    b.Title AS BookTitle,
+    br.FirstName + ' ' + br.LastName AS BorrowerName,
+    l.DateBorrowed,
+    l.DueDate,
+    DATEDIFF(DAY, l.DueDate, GETDATE()) AS OverdueDays
+FROM Loans l
+JOIN Books b ON l.BookID = b.BookID
+JOIN Borrowers br ON l.BorrowerID = br.BorrowerID
+WHERE l.DateReturned IS NULL -- Book not yet returned
+  AND DATEDIFF(DAY, l.DueDate, GETDATE()) > 30 -- Overdue by more than 30 days
+ORDER BY OverdueDays DESC;
+
+9.Author Popularity using Aggregation
+SELECT 
+    b.Author,
+    COUNT(l.LoanID) AS BorrowingFrequency,
+    RANK() OVER (ORDER BY COUNT(l.LoanID) DESC) AS Rank
+FROM Books b
+JOIN Loans l ON b.BookID = l.BookID
+GROUP BY b.Author
+ORDER BY Rank;
+
+10.Genre Preference by Age using Group By and Having:
+WITH AgeGroups AS (
+    SELECT 
+        br.BorrowerID,
+        FLOOR(DATEDIFF(YEAR, br.DateOfBirth, GETDATE()) / 10) * 10 AS AgeGroup,
+        b.Genre
+    FROM Borrowers br
+    JOIN Loans l ON br.BorrowerID = l.BorrowerID
+    JOIN Books b ON l.BookID = b.BookID
+    WHERE l.DateReturned IS NOT NULL -- Exclude ongoing loans
+),
+GenreCounts AS (
+    SELECT 
+        AgeGroup,
+        Genre,
+        COUNT(*) AS BorrowingCount
+    FROM AgeGroups
+    GROUP BY AgeGroup, Genre
+),
+PreferredGenres AS (
+    SELECT 
+        AgeGroup,
+        Genre,
+        BorrowingCount,
+        RANK() OVER (PARTITION BY AgeGroup ORDER BY BorrowingCount DESC) AS Rank
+    FROM GenreCounts
+)
+SELECT 
+    AgeGroup,
+    Genre AS PreferredGenre,
+    BorrowingCount
+FROM PreferredGenres
+WHERE Rank = 1
+ORDER BY AgeGroup;
+
+11.Stored Procedure - Borrowed Books Report
+CREATE PROCEDURE sp_BorrowedBooksReport
+    @StartDate DATE,
+    @EndDate DATE
+AS
+BEGIN
+    -- Check for valid date range
+    IF @StartDate > @EndDate
+    BEGIN
+        PRINT 'Error: StartDate cannot be greater than EndDate';
+        RETURN;
+    END
+
+    -- Retrieve borrowed books within the specified date range
+    SELECT 
+        l.LoanID,
+        b.Title AS BookTitle,
+        br.FirstName + ' ' + br.LastName AS BorrowerName,
+        l.DateBorrowed,
+        l.DueDate,
+        l.DateReturned
+    FROM Loans l
+    JOIN Books b ON l.BookID = b.BookID
+    JOIN Borrowers br ON l.BorrowerID = br.BorrowerID
+    WHERE l.DateBorrowed BETWEEN @StartDate AND @EndDate
+    ORDER BY l.DateBorrowed ASC;
+END;
+
+12.Trigger 
+CREATE TRIGGER trg_BookStatusChange
+ON Books
+AFTER UPDATE
+AS
+BEGIN
+    IF UPDATE(CurrentStatus)
+    BEGIN
+        INSERT INTO AuditLog (BookID, StatusChange, ChangeDate)
+        SELECT BookID, CurrentStatus, GETDATE()
+        FROM Inserted;
+    END
+END;
+
+13.Trigger to Log Book Status Changes
+1.Create the AuditLog Table
+CREATE TABLE AuditLog (
+    AuditID INT IDENTITY(1,1) PRIMARY KEY,
+    BookID INT NOT NULL,
+    StatusChange NVARCHAR(50) NOT NULL,
+    ChangeDate DATETIME DEFAULT GETDATE()
+);
+
+2.Create the Trigger
+CREATE TRIGGER trg_LogBookStatusChange
+ON Books
+AFTER UPDATE
+AS
+BEGIN
+    -- Insert a log entry only if the status changes
+    INSERT INTO AuditLog (BookID, StatusChange, ChangeDate)
+    SELECT 
+        BookID,
+        CONCAT('Status changed from ', i.CurrentStatus, ' to ', d.CurrentStatus) AS StatusChange,
+        GETDATE() AS ChangeDate
+    FROM inserted i
+    JOIN deleted d ON i.BookID = d.BookID
+    WHERE i.CurrentStatus <> d.CurrentStatus 
+      AND ((d.CurrentStatus = 'Available' AND i.CurrentStatus = 'Borrowed') 
+        OR (d.CurrentStatus = 'Borrowed' AND i.CurrentStatus = 'Available'));
+END;
+
+14.Stored Procedure with Temporary Table
+
+CREATE PROCEDURE sp_OverdueBooksReport
+AS
+BEGIN
+    CREATE TABLE #OverdueBorrowers (
+        BorrowerID INT,
+        BorrowerName NVARCHAR(255),
+        OverdueCount INT
+    );
+
+    INSERT INTO #OverdueBorrowers (BorrowerID, BorrowerName, OverdueCount)
+    SELECT 
+        br.BorrowerID,
+        br.FirstName + ' ' + br.LastName AS BorrowerName,
+        COUNT(*) AS OverdueCount
+    FROM Borrowers br
+    JOIN Loans l ON br.BorrowerID = l.BorrowerID
+    WHERE l.DateReturned IS NULL -- Book not yet returned
+      AND DATEDIFF(DAY, l.DueDate, GETDATE()) > 0 -- Overdue books
+    GROUP BY br.BorrowerID, br.FirstName, br.LastName;
+
+        ob.BorrowerName,
+        b.Title AS BookTitle,
+        l.DateBorrowed,
+        l.DueDate,
+        DATEDIFF(DAY, l.DueDate, GETDATE()) AS OverdueDays
+    FROM #OverdueBorrowers ob
+    JOIN Loans l ON ob.BorrowerID = l.BorrowerID
+    JOIN Books b ON l.BookID = b.BookID
+    WHERE l.DateReturned IS NULL -- Book not yet returned
+      AND DATEDIFF(DAY, l.DueDate, GETDATE()) > 0 -- Overdue books
+    ORDER BY ob.BorrowerName, OverdueDays DESC;
+
+    DROP TABLE #OverdueBorrowers;
+END;
+
+15.Stored Procedure: Retrieve Borrowers with Overdue Books and Their Overdue Details
+
+CREATE PROCEDURE sp_OverdueBorrowersDetails
+AS
+BEGIN
+    CREATE TABLE #OverdueBorrowers (
+        BorrowerID INT,
+        BorrowerName NVARCHAR(255),
+        OverdueCount INT
+    );
+
+    INSERT INTO #OverdueBorrowers (BorrowerID, BorrowerName, OverdueCount)
+    SELECT 
+        br.BorrowerID,
+        br.FirstName + ' ' + br.LastName AS BorrowerName,
+        COUNT(*) AS OverdueCount
+    FROM Borrowers br
+    JOIN Loans l ON br.BorrowerID = l.BorrowerID
+    WHERE l.DateReturned IS NULL -- Book not yet returned
+      AND DATEDIFF(DAY, l.DueDate, GETDATE()) > 0 -- Overdue books
+    GROUP BY br.BorrowerID, br.FirstName, br.LastName;
+
+    SELECT 
+        ob.BorrowerID,
+        ob.BorrowerName,
+        ob.OverdueCount,
+        b.Title AS BookTitle,
+        l.DateBorrowed,
+        l.DueDate,
+        DATEDIFF(DAY, l.DueDate, GETDATE()) AS OverdueDays
+    FROM #OverdueBorrowers ob
+    JOIN Loans l ON ob.BorrowerID = l.BorrowerID
+    JOIN Books b ON l.BookID = b.BookID
+    WHERE l.DateReturned IS NULL -- Book not yet returned
+      AND DATEDIFF(DAY, l.DueDate, GETDATE()) > 0 -- Overdue books
+    ORDER BY ob.BorrowerName, OverdueDays DESC;
+
+ 
+    DROP TABLE #OverdueBorrowers;
+END;
+	
