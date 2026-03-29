@@ -17,11 +17,7 @@ To get started with the project:
 3. Explore the SQL exercises and begin honing your SQL skills!
 
 ### Contributing
-Contributions are welcome! If you have SQL exercises or solutions to share, please fork the repository and submit a pull request.
-
-### License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
+Contributions are welcome! If you have SQL exercises or solutions to share, please fork the repository and submit a pull request.4
 ---
 
 Feel free to reach out for any questions or suggestions regarding the project!
